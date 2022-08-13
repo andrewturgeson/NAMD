@@ -1,0 +1,215 @@
+#############################################################
+## JOB DESCRIPTION                                         ##
+#############################################################
+
+#Command to initiate from directory: namd2 lco_stretch.conf > test/lco_strech.log
+
+#############################################################
+## ADJUSTABLE PARAMETERS                                   ##
+#############################################################
+
+set trial A
+set restart 0
+
+structure 	   A.psf
+coordinates        A.pdb
+
+set temperature    310
+
+set prev [expr $restart - 1] 
+
+proc get_first_ts { xscfile } {
+  set fd [open $xscfile r]
+  gets $fd
+  gets $fd
+  gets $fd line
+  set ts [lindex $line 0]
+  close $fd
+  return $ts
+}
+
+set inputname results/${trial}.$prev
+set outputname results/${trial}.$restart
+
+if {$restart >= 1} {
+  
+  binCoordinates     $inputname.restart.coor
+  binVelocities      $inputname.restart.vel
+  extendedSystem     $inputname.restart.xsc
+  set currenttimestep [get_first_ts $inputname.restart.xsc]
+} else {
+
+  temperature $temperature
+  set currenttimestep 0
+}
+
+firsttimestep      $currenttimestep
+
+#############################################################
+## SIMULATION PARAMETERS                                   ##
+#############################################################
+
+# Input
+paraTypeCharmm	    on
+parameters              toppar/par_all36m_prot.prm
+parameters              toppar/par_all36_na.prm
+parameters              toppar/par_all36_carb.prm
+parameters              toppar/par_all36_lipid.prm
+parameters              toppar/par_all36_cgenff.prm
+parameters              toppar/par_interface.prm
+parameters              toppar/toppar_water_ions.str
+parameters              toppar/toppar_dum_noble_gases.str
+parameters              toppar/toppar_ions_won.str
+parameters              toppar/toppar_all36_prot_c36m_d_aminoacids.str
+parameters              toppar/toppar_all36_prot_fluoro_alkanes.str
+parameters              toppar/toppar_all36_prot_heme.str
+parameters              toppar/toppar_all36_prot_na_combined.str
+parameters              toppar/toppar_all36_prot_retinol.str
+parameters              toppar/toppar_all36_prot_modify_res.str
+parameters              toppar/toppar_all36_na_nad_ppi.str
+parameters              toppar/toppar_all36_na_rna_modified.str
+parameters              toppar/toppar_all36_lipid_bacterial.str
+parameters              toppar/toppar_all36_lipid_cardiolipin.str
+parameters              toppar/toppar_all36_lipid_cholesterol.str
+parameters              toppar/toppar_all36_lipid_inositol.str
+parameters              toppar/toppar_all36_lipid_lps.str
+parameters              toppar/toppar_all36_lipid_miscellaneous.str
+parameters              toppar/toppar_all36_lipid_model.str
+parameters              toppar/toppar_all36_lipid_prot.str
+parameters              toppar/toppar_all36_lipid_sphingo.str
+parameters              toppar/toppar_all36_lipid_yeast.str
+parameters              toppar/toppar_all36_lipid_hmmm.str
+parameters              toppar/toppar_all36_lipid_detergent.str
+parameters              toppar/toppar_all36_lipid_ether.str
+parameters              toppar/toppar_all36_carb_glycolipid.str
+parameters              toppar/toppar_all36_carb_glycopeptide.str
+parameters              toppar/toppar_all36_carb_imlab.str
+parameters              toppar/toppar_all36_label_spin.str
+parameters              toppar/toppar_all36_label_fluorophore.str
+parameters	    	toppar/6fh.prm
+
+# Force-Field Parameters
+exclude             scaled1-4
+1-4scaling          1.0
+cutoff              12.0
+switching           on
+switchdist          10.0
+pairlistdist        16.0
+
+
+# Integrator Parameters
+timestep            2.0  ;# 2fs/step
+rigidBonds          all  ;# needed for 2fs steps
+nonbondedFreq       1
+fullElectFrequency  1  
+stepspercycle       20
+
+
+# Constant Temperature Control
+langevin            on    ;# do langevin dynamics ***turned off as not to disturb the movement of atoms during strech***
+langevinDamping     1     ;# damping coefficient (gamma) of 1/ps
+langevinTemp        $temperature
+langevinHydrogen    off    ;# don't couple langevin bath to hydrogens
+
+
+# Periodic Boundary Conditions
+cellBasisVector1    70   0.0   0.0
+cellBasisVector2     0.0  70   0.0
+cellBasisVector3     0.0    0.0   116
+cellOrigin          0.0     0.0     0.0
+wrapAll             on
+
+
+# PME (for full-system periodic electrostatics)
+PME                 yes
+PMEInterpOrder          4; # interpolation order (spline order 6 in charmm)
+PMEGridSpacing      1.0
+
+#manual grid definition
+#PMEGridSizeX        45
+#PMEGridSizeY        45
+#PMEGridSizeZ        48
+
+
+# Constant Pressure Control 
+
+useGroupPressure      yes ;# needed for 2fs steps
+useFlexibleCell       yes  ;# no for water box, yes for membrane
+useConstantArea       yes ;# no for water box, yes for membrane
+#useConstantRatio      yes; # keeps the ratio of the unit cell in the x-y plane constant A=B
+
+langevinPiston        on
+langevinPistonTarget  1.01325 ;#  in bar -> 1 atm
+langevinPistonPeriod  50.0
+langevinPistonDecay   25.0
+langevinPistonTemp    $temperature
+
+
+# Output
+outputName          $outputname
+
+restartfreq         5000    ;# 5000 steps = every 10ps
+dcdfreq             5000
+xstFreq             5000
+outputEnergies      5000
+outputPressure      5000
+
+
+
+
+#############################################################
+## EXTRA PARAMETERS                                        ##
+#############################################################
+if {$restart == 1} {
+  colvars on
+  colvarsConfig colvar.str
+} else {
+  colvars off
+}
+
+# Fixed Atoms Constraint (set PDB beta-column to 1) ***added for stretch
+if {$restart >= 1} {
+constraints             on
+consexp                 2
+consref                 A_border.ref
+conskfile               A_border.ref
+conskcol                B
+constraintScaling       0.5
+#selectConstrX		off
+#selectConstrY		off
+#selectConstrZ		off
+} else {
+constraints	    off
+}
+	
+###################################
+fixedAtoms          off
+fixedAtomsFile      A.ref
+fixedAtomsCol       B
+###################################
+
+
+#***added for stretch
+if {$restart > 1} {
+SMD	on
+SMDFile	 A_PME.ref
+SMDk    1; #0.01
+SMDVel  0.00001; #0.005 #; timestep: ;#velocity
+SMDDir 0.0 0.0 -1.00 ;# x,y,z direction of stretch
+SMDOutputFreq 1000
+}
+
+#############################################################
+## EXECUTION SCRIPT                                        ##
+#############################################################
+
+# Minimization
+
+if {$restart == 0} {
+  minimize            5000
+  reinitvels          $temperature
+} elseif {$restart < 2} {
+  numsteps 2505000; #5 ns equilibration
+} else {
+  numsteps 25005000 ;# 50 ns (total)
+}
